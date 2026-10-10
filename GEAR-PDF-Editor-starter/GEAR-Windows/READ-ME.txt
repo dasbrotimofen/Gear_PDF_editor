@@ -1,0 +1,10 @@
+GEAR PDF Editor — Windows x64 source prototype
+
+Install the Microsoft .NET 10 Desktop Runtime (x64), then run GearPdf.App.exe.
+Official downloads: https://dotnet.microsoft.com/en-us/download/dotnet/10.0
+Choose Desktop Runtime, Windows x64. The SDK is not needed for this folder.
+
+This build cross-compiled successfully. It has not been launched on Windows here.
+Pen buttons can be mapped in the driver to E (object eraser toggle) and P (last gear pen).
+Driver/hardware mapping has not been tested here. PDF support is pending. Core persistence checks passed.
+Source is included in the adjacent gear-pdf-editor folder under AGPL-3.0-or-later.
