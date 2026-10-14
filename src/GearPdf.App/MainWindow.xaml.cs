@@ -7,12 +7,17 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using GearPdf.Core;
+using GearPdf.Pdf;
+using System.Windows.Media.Imaging;
 using Microsoft.Win32;
 namespace GearPdf.App;
 public partial class MainWindow : Window {
-    private string? path;
+    private string? path, importedPdfPath;
     private bool dirty, syncing;
     private Mark? clipboard;
+    private ImageAsset? clipboardAsset;
+    private string? clipboardToken;
+    private bool OwnClipboard(){try{return clipboardToken!=null && Clipboard.ContainsData("GEAR.Annotation") && Equals(Clipboard.GetData("GEAR.Annotation"),clipboardToken);}catch{return false;}}
     private static readonly string[] GearTools=["Pen 1","Pen 2","Pen 3","Highlight","Eraser","Line","Rectangle","Ellipse","Select"];
     private static double ToolAngleStep => Math.PI*2/GearTools.Length;
     private bool favouritesHorizontal, favouriteDragging;
@@ -43,7 +48,7 @@ public partial class MainWindow : Window {
     };
     public MainWindow() {
         InitializeComponent(); Surface.Changed+=Changed; BuildGear(); BuildFavourites();
-        var menu=new ContextMenu(); foreach(var label in new[]{"Cut","Copy","Paste","Delete","Properties"}) {var item=new MenuItem{Header=label};item.Click+=(_,_)=>ContextAction(label);menu.Items.Add(item);} Surface.ContextMenu=menu;
+        var menu=new ContextMenu(); foreach(var label in new[]{"Cut","Copy","Paste","Delete","Properties","Rotate left 90°","Rotate right 90°","Rotate image…"}) {var item=new MenuItem{Header=label};item.Click+=(_,_)=>ContextAction(label);menu.Items.Add(item);} menu.Opened+=(_,_)=>{bool image=Surface.Page.Marks.Any(m=>m.Id==Surface.Selected && m.Tool==Tool.Image);foreach(MenuItem item in menu.Items)if(item.Header is string label && label.StartsWith("Rotate"))item.IsEnabled=image;};Surface.ContextMenu=menu;
         Surface.Preset=slots[activeSlot]; Loaded+=(_,_)=>{Surface.Fit();Sync();};
     }
     private void Changed(){dirty=true;Sync();}
@@ -201,8 +206,8 @@ public partial class MainWindow : Window {
     private void FavouriteHandleLostTouchCapture(object sender,TouchEventArgs e)=>favouriteDragging=false;
     private void FavouriteClick(object sender,RoutedEventArgs e){if(Surface.Preset.Tool is Tool.Select or Tool.Eraser)return;favourites.Add(Surface.Preset with{});BuildFavourites();}
     private bool ConfirmDiscard(){if(!dirty)return true;var answer=MessageBox.Show(this,"Save your sketch before continuing?","Unsaved sketch",MessageBoxButton.YesNoCancel);return answer==MessageBoxResult.No || (answer==MessageBoxResult.Yes && Save(false));}
-    private void NewClick(object sender,RoutedEventArgs e){if(!ConfirmDiscard())return;Surface.Document=new();Surface.PageIndex=0;Surface.History.Clear();Surface.Refresh();path=null;dirty=false;Surface.Fit();Sync();}
-    private void OpenClick(object sender,RoutedEventArgs e){if(!ConfirmDiscard())return;var dialog=new OpenFileDialog{Filter="GEAR sketch (*.gear)|*.gear"};if(dialog.ShowDialog(this)!=true)return;try{if(new FileInfo(dialog.FileName).Length>50*1024*1024)throw new InvalidDataException("Sketch exceeds the 50 MB starter limit.");var doc=DocumentFile.Decode(File.ReadAllText(dialog.FileName));Surface.Document=doc;Surface.PageIndex=0;Surface.History.Clear();Surface.Refresh();path=dialog.FileName;dirty=false;Surface.Fit();Sync();}catch(Exception ex){MessageBox.Show(this,ex.Message,"Unable to open sketch");}}
+    private void NewClick(object sender,RoutedEventArgs e){if(!ConfirmDiscard())return;Surface.Document=new();importedPdfPath=null;Surface.PageIndex=0;Surface.History.Clear();Surface.Refresh();path=null;dirty=false;Surface.Fit();Sync();}
+    private void OpenClick(object sender,RoutedEventArgs e){if(!ConfirmDiscard())return;var dialog=new OpenFileDialog{Filter="GEAR sketch (*.gear)|*.gear"};if(dialog.ShowDialog(this)!=true)return;try{if(new FileInfo(dialog.FileName).Length>200L*1024*1024)throw new InvalidDataException("Sketch exceeds the 200 MB starter limit.");var doc=DocumentFile.Decode(File.ReadAllText(dialog.FileName));foreach(var asset in doc.Assets.Values)MediaImport.Decode(asset);Surface.Document=doc;importedPdfPath=null;Surface.PageIndex=0;Surface.History.Clear();Surface.Refresh();path=dialog.FileName;dirty=false;Surface.Fit();Sync();}catch(Exception ex){MessageBox.Show(this,ex.Message,"Unable to open sketch");}}
     private bool Save(bool saveAs){var target=path;if(saveAs || target is null){var dialog=new SaveFileDialog{Filter="GEAR sketch (*.gear)|*.gear",DefaultExt=".gear",FileName=path is null?"Sketch.gear":System.IO.Path.GetFileName(path)};if(dialog.ShowDialog(this)!=true)return false;target=dialog.FileName;}try{DocumentFile.Save(target!,Surface.Document);path=target;dirty=false;Sync();return true;}catch(Exception ex){MessageBox.Show(this,ex.Message,"Unable to save sketch");return false;}}
     private void SaveClick(object sender,RoutedEventArgs e)=>Save(false);
     private void SaveAsClick(object sender,RoutedEventArgs e)=>Save(true);
@@ -214,8 +219,55 @@ public partial class MainWindow : Window {
     private void AddPageClick(object sender,RoutedEventArgs e){Surface.History.Record(Surface.Document);var p=Surface.Page;Surface.Document.Pages.Add(new(){WidthMm=p.WidthMm,HeightMm=p.HeightMm,GridOpacity=p.GridOpacity});Surface.PageIndex=Surface.Document.Pages.Count-1;Surface.Refresh();Changed();}
     private void PreviousClick(object sender,RoutedEventArgs e){Surface.PageIndex=Math.Max(0,Surface.PageIndex-1);Surface.Refresh();Surface.Fit();Sync();}
     private void NextClick(object sender,RoutedEventArgs e){Surface.PageIndex=Math.Min(Surface.Document.Pages.Count-1,Surface.PageIndex+1);Surface.Refresh();Surface.Fit();Sync();}
-    private static Mark Clone(Mark m)=>new(){Tool=m.Tool,Colour=m.Colour,WidthMm=m.WidthMm,Opacity=m.Opacity,Points=m.Points.ToList()};
-    private void ContextAction(string label){var mark=Surface.Page.Marks.FirstOrDefault(m=>m.Id==Surface.Selected);if(label is "Copy" or "Cut"){if(mark==null)return;clipboard=Clone(mark);if(label=="Cut")Surface.DeleteSelection();}else if(label=="Paste" && clipboard!=null){Surface.History.Record(Surface.Document);var copy=Clone(clipboard);copy.Points=copy.Points.Select(p=>new Vec(p.X+5,p.Y+5)).ToList();Surface.Page.Marks.Add(copy);Surface.Selected=copy.Id;Changed();}else if(label=="Delete")Surface.DeleteSelection();else if(label=="Properties" && mark!=null){var dialog=new Window{Title="Annotation properties",Owner=this,Width=310,Height=230,WindowStartupLocation=WindowStartupLocation.CenterOwner};var panel=new StackPanel{Margin=new(15)};var colour=new TextBox{Text=mark.Colour,Margin=new(0,5,0,5)};var width=new TextBox{Text=mark.WidthMm.ToString(System.Globalization.CultureInfo.InvariantCulture),Margin=new(0,5,0,5)};var opacity=new Slider{Minimum=0,Maximum=1,Value=mark.Opacity};panel.Children.Add(new Label{Content="Colour (#RRGGBB), width (mm), opacity"});panel.Children.Add(colour);panel.Children.Add(width);panel.Children.Add(opacity);panel.Children.Add(MakeButton("Apply",()=>{if(!System.Text.RegularExpressions.Regex.IsMatch(colour.Text,"^#[0-9a-fA-F]{6}$") || !double.TryParse(width.Text,System.Globalization.NumberStyles.Float,System.Globalization.CultureInfo.InvariantCulture,out double w) || !double.IsFinite(w) || w is <=0 or >50){MessageBox.Show(dialog,"Enter #RRGGBB and a width between 0 and 50 mm.");return;}Surface.History.Record(Surface.Document);mark.Colour=colour.Text;mark.WidthMm=w;mark.Opacity=opacity.Value;Changed();dialog.Close();}));dialog.Content=panel;dialog.ShowDialog();}Surface.InvalidateVisual();}
+    private static Mark Clone(Mark m)=>new(){Tool=m.Tool,Colour=m.Colour,WidthMm=m.WidthMm,Opacity=m.Opacity,Points=m.Points.ToList(),ImageAssetId=m.ImageAssetId,RotationDegrees=m.RotationDegrees};
+    private async void ImportPdfClick(object sender,RoutedEventArgs e){
+        if(!ConfirmDiscard())return;
+        var dialog=new OpenFileDialog{Filter="PDF documents (*.pdf)|*.pdf",Title="Import PDF as page backgrounds"};if(dialog.ShowDialog(this)!=true)return;
+        IsEnabled=false;
+        try{
+            var doc=await PdfImporter.ImportAsync(dialog.FileName,new Progress<string>(text=>Status.Text=text));
+            Surface.Document=doc;Surface.PageIndex=0;Surface.History.Clear();Surface.Refresh();importedPdfPath=dialog.FileName;path=null;dirty=true;Surface.Fit();
+        }catch(Exception ex){MessageBox.Show(this,ex.Message,"Unable to import PDF");}
+        finally{IsEnabled=true;Sync();}
+    }
+    private void ExportPdfClick(object sender,RoutedEventArgs e){
+        var grid=MessageBox.Show(this,"Include the visible grid in the exported PDF?\n\nPDF pages are rendered backgrounds; export creates a flattened copy. Save .gear to keep editable markup.","Export PDF",MessageBoxButton.YesNoCancel);
+        if(grid==MessageBoxResult.Cancel)return;
+        var name=path??importedPdfPath;var dialog=new SaveFileDialog{Filter="PDF documents (*.pdf)|*.pdf",DefaultExt=".pdf",FileName=name is null?"Sketch-annotated.pdf":System.IO.Path.GetFileNameWithoutExtension(name)+"-annotated.pdf"};if(dialog.ShowDialog(this)!=true)return;
+        if(importedPdfPath!=null && string.Equals(System.IO.Path.GetFullPath(dialog.FileName),System.IO.Path.GetFullPath(importedPdfPath),StringComparison.OrdinalIgnoreCase)){MessageBox.Show(this,"Choose a different filename for the exported copy.","Original PDF");return;}
+        try{PdfExporter.Export(dialog.FileName,Surface.Document,grid==MessageBoxResult.Yes);Status.Text="Exported PDF copy. Save .gear to retain editable markup.";}catch(Exception ex){MessageBox.Show(this,ex.Message,"Unable to export PDF");}
+    }
+    private void PasteImageClick(object sender,RoutedEventArgs e)=>PasteClipboardImage(true);
+    private bool PasteClipboardImage(bool showMissing){
+        try{
+            BitmapSource? bitmap=null;
+            if(Clipboard.ContainsImage())bitmap=Clipboard.GetImage();
+            else if(Clipboard.ContainsFileDropList()){
+                var files=Clipboard.GetFileDropList();if(files.Count==1 && File.Exists(files[0])){
+                    using var stream=File.OpenRead(files[0]!);bitmap=BitmapDecoder.Create(stream,BitmapCreateOptions.PreservePixelFormat,BitmapCacheOption.OnLoad).Frames[0];
+                }
+            }
+            if(bitmap==null){if(showMissing)MessageBox.Show(this,"Copy an image or screenshot first, then press Ctrl+V.","Paste image");return false;}
+            Surface.AddImage(MediaImport.FromBitmap(bitmap));activeSlot="Select";Surface.Preset=slots["Select"];gearPropertiesOpen=false;BuildGear();Sync();Surface.Focus();return true;
+        }catch(Exception ex){MessageBox.Show(this,ex.Message,"Unable to paste image");return true;}
+    }
+    private void RotateImage(Mark image,double angle){Surface.History.Record(Surface.Document);image.RotationDegrees=ImageGeometry.Normalize(angle);Changed();Surface.InvalidateVisual();}
+    private void RotationDialog(Mark image){
+        var dialog=new Window{Title="Rotate image",Owner=this,Width=340,Height=205,ResizeMode=ResizeMode.NoResize,WindowStartupLocation=WindowStartupLocation.CenterOwner};var panel=new StackPanel{Margin=new Thickness(16)};
+        panel.Children.Add(new Label{Content="Angle in degrees (clockwise)"});
+        var angle=new TextBox{Text=image.RotationDegrees.ToString("0.##",System.Globalization.CultureInfo.InvariantCulture),Margin=new Thickness(0,6,0,12)};panel.Children.Add(angle);
+        var buttons=new StackPanel{Orientation=Orientation.Horizontal};var apply=MakeButton("Apply",()=>{
+            bool valid=double.TryParse(angle.Text,System.Globalization.NumberStyles.Float,System.Globalization.CultureInfo.InvariantCulture,out double degrees)||double.TryParse(angle.Text,out degrees);
+            if(!valid || !double.IsFinite(degrees) || Math.Abs(degrees)>360000){MessageBox.Show(dialog,"Enter a finite angle, such as 30, 90 or -45.");return;}
+            RotateImage(image,degrees);dialog.Close();
+        });apply.IsDefault=true;buttons.Children.Add(apply);var cancel=MakeButton("Cancel",()=>dialog.Close());cancel.IsCancel=true;buttons.Children.Add(cancel);panel.Children.Add(buttons);dialog.Content=panel;dialog.Loaded+=(_,_)=>{angle.Focus();angle.SelectAll();};dialog.ShowDialog();
+    }
+    private void ContextAction(string label){
+        if(label=="Paste" && !OwnClipboard() && PasteClipboardImage(false))return;
+var mark=Surface.Page.Marks.FirstOrDefault(m=>m.Id==Surface.Selected);
+        if(label.StartsWith("Rotate") && mark?.Tool==Tool.Image){if(label=="Rotate image…")RotationDialog(mark);else RotateImage(mark,mark.RotationDegrees+(label=="Rotate left 90°"?-90:90));return;}
+        if(label=="Properties" && mark?.Tool==Tool.Image){RotationDialog(mark);return;}
+        if(label is "Copy" or "Cut"){if(mark==null)return;clipboard=Clone(mark);clipboardAsset=mark.ImageAssetId is string imageId?Surface.Document.Assets[imageId]:null;clipboardToken=Guid.NewGuid().ToString("N");var data=new DataObject();data.SetData("GEAR.Annotation",clipboardToken);if(clipboardAsset!=null)data.SetImage(MediaImport.Decode(clipboardAsset));try{Clipboard.SetDataObject(data,true);}catch(Exception ex){MessageBox.Show(this,ex.Message,"Unable to copy annotation");return;}if(label=="Cut")Surface.DeleteSelection();}else if(label=="Paste" && clipboard!=null && OwnClipboard()){Surface.History.Record(Surface.Document);var copy=Clone(clipboard);if(copy.Tool==Tool.Image && clipboardAsset!=null){string id=Guid.NewGuid().ToString("N");Surface.Document.Assets.Add(id,clipboardAsset);copy.ImageAssetId=id;}copy.Points=copy.Points.Select(p=>new Vec(p.X+5,p.Y+5)).ToList();Surface.Page.Marks.Add(copy);Surface.Selected=copy.Id;Changed();}else if(label=="Delete")Surface.DeleteSelection();else if(label=="Properties" && mark!=null && mark.Tool!=Tool.Image){var dialog=new Window{Title="Annotation properties",Owner=this,Width=310,Height=230,WindowStartupLocation=WindowStartupLocation.CenterOwner};var panel=new StackPanel{Margin=new(15)};var colour=new TextBox{Text=mark.Colour,Margin=new(0,5,0,5)};var width=new TextBox{Text=mark.WidthMm.ToString(System.Globalization.CultureInfo.InvariantCulture),Margin=new(0,5,0,5)};var opacity=new Slider{Minimum=0,Maximum=1,Value=mark.Opacity};panel.Children.Add(new Label{Content="Colour (#RRGGBB), width (mm), opacity"});panel.Children.Add(colour);panel.Children.Add(width);panel.Children.Add(opacity);panel.Children.Add(MakeButton("Apply",()=>{if(!System.Text.RegularExpressions.Regex.IsMatch(colour.Text,"^#[0-9a-fA-F]{6}$") || !double.TryParse(width.Text,System.Globalization.NumberStyles.Float,System.Globalization.CultureInfo.InvariantCulture,out double w) || !double.IsFinite(w) || w is <=0 or >50){MessageBox.Show(dialog,"Enter #RRGGBB and a width between 0 and 50 mm.");return;}Surface.History.Record(Surface.Document);mark.Colour=colour.Text;mark.WidthMm=w;mark.Opacity=opacity.Value;Changed();dialog.Close();}));dialog.Content=panel;dialog.ShowDialog();}Surface.InvalidateVisual();}
     private void OnKeyDown(object sender,KeyEventArgs e){
         if(e.OriginalSource is System.Windows.Controls.Primitives.TextBoxBase or PasswordBox)return;
         if(Keyboard.Modifiers==ModifierKeys.None && e.Key is Key.E or Key.P){

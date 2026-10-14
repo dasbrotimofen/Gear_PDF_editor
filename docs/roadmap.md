@@ -1,9 +1,7 @@
 # Roadmap
 
-1. Compile and test the current blank-page slice on Windows, including saved-file round trips.
-2. Test with the user's pen hardware; map side buttons; measure ink latency and improve rendering.
-3. Polish radial-sector animations and keyboard navigation, add custom colours, persistent/editable/reorderable favourites, and paper dialog.
-4. Add bounded command history, resize handles and property-control synchronization.
-5. Review candidate PDF engines and exact binary/wrapper dependency licences. Test standard annotation read/write/save interoperability before adopting an engine.
-6. PDF import/background and export; grid inclusion toggle.
-7. Create private GitHub repository and add source. Public alpha only after explicit visibility change.
+1. Windows testing for image clipboard, resizing, PDF import/export and pointer handling.
+2. Persist favourites and floating-bar layout; add pressure/smoothing and refine gear layout.
+3. Preserve original PDF page objects/text and implement interoperable editable PDF annotations.
+4. Handle larger documents with lazy rendering and compressed native storage.
+5. Review pinned dependencies and exact release assets before a public alpha. Keep the repository private until the user requests a visibility change.

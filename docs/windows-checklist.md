@@ -35,3 +35,12 @@ Do not treat successful compilation or model checks as validation of pen/touch b
 - Drag the favourite-bar header with mouse and touch; flip its orientation near each viewport edge.
 - Add/remove favourites; check the scrollbars allow access when the bar has many presets.
 - Click/draw outside the bar; verify the transparent overlay does not intercept canvas input.
+
+- Paste a screenshot with Ctrl+V and Paste image; move/resize it, draw on it, undo/redo and save/reopen.
+- Copy an image from GEAR into another application. Copy a GEAR shape while an image is on the clipboard; ensure GEAR paste still copies the shape.
+- Import multipage/rotated PDFs, navigate and mark up each page; reject failed imports without replacing the current sketch.
+- Export with and without grid; reopen the exported PDF in another viewer and check images and marks. Keep .gear for editable markup.
+
+- Select a placed image; rotate left/right and enter a custom angle. Check undo/redo and save/reopen.
+- Move and resize images at 30, 90 and 270 degrees; the resize anchor and aspect ratio should remain stable.
+- Copy/paste a rotated image inside GEAR and export PDF; compare its angle and position.

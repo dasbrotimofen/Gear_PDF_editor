@@ -1,17 +1,13 @@
 # Architecture
 
-The first milestone uses C#/.NET 10 and WPF. WPF was chosen for this implementation; WinUI was discussed previously but not committed to. Windows is the first target.
+GearPdf.Core owns millimetre-based document/page/mark geometry, embedded PNG assets, native v2 JSON persistence and bounded undo/redo. V1 files migrate on load.
 
-`GearPdf.Core` owns document/page/mark data, millimetre coordinates, JSON validation and snapshot undo history. It has no WPF dependency. `GearPdf.App` owns the window, gear controls, property menus, file dialogs and pointer handling.
+GearPdf.App is the Windows WPF UI and input layer. Clipboard bitmaps are normalized to PNG/BGRA32; images are selected after pasting and can move/resize. Cached WPF bitmap sources are cleared when a document is replaced.
 
-Keeping two projects for the first slice avoids empty assemblies. Extract `Input`, `UI`, and `Annotations` when there is enough implementation to justify them. A future `GearPdf.Pdf` project will own PDF adapters.
+GearPdf.Pdf owns PDF import/export. Docnet.Core/PDFium renders imported page backgrounds at 2 pixels per PDF point (approximately 144 dpi); original page dimensions are derived from rendered dimensions with rounding. Imports are serialized because PDFium is not thread-safe. Raster output uses a small project-owned PNG encoder. PDFsharp writes the backgrounds and separately stored markup into new PDF page content. No original PDF is embedded or rewritten.
 
-Document format v1: plain JSON, one document with pages, background settings and ordered marks. Widths and geometry are in millimetres. Each mark has an ID, tool, colour, width, opacity and points. Save validates and writes a temporary sibling before replacement. No PDF objects are required for blank pages.
+Native documents store assets once in a dictionary; marks and backgrounds refer to asset IDs. Undo snapshots share immutable asset bytes while snapshotting geometry, preventing image data duplication for every stroke. History is capped at 100 snapshots.
 
-The renderer maps millimetres to display coordinates through scale and translation; screen DPI is not used to claim exact physical display size. Grid spacing remains 5 mm in document space.
+PDF export is flattened. It does not round-trip searchable text, forms, signatures, links or standard PDF annotations. Future work should preserve original page objects and test interoperability before promising such capabilities.
 
-The first input pipeline renders on the UI thread. Device testing and performance profiling must precede any latency claim. Side-button bindings and pressure are intentionally pending.
-
-Current undo uses whole-document JSON snapshots, suitable for initial testing but potentially expensive for large sketches. Replace with bounded commands before production use. Page grid-opacity changes currently bypass history.
-
-PDF work starts with a separate licence/API investigation and an annotation round-trip spike. No engine has been selected or bundled. Render only visible pages; own live ink independently of the PDF backend.
+Limits: 25 PDF pages / 50 MB source, 40 megapixels per image, 128 MB of embedded asset bytes, 200 MB on native open. All media stay local to the application.

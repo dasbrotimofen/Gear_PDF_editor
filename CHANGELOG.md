@@ -34,3 +34,17 @@
 - Moved favourites into an independent draggable floating bar with horizontal/vertical orientation toggle.
 - Bar includes Save preset, colour indicators, tooltips, removal and overflow scrolling.
 - Favourites and bar layout remain session-only.
+
+## Starter update 6
+
+- Added clipboard image paste, embedded PNG assets, image selection/move/proportional resize, copying and deletion.
+- Added PDFium import of existing PDF pages as backgrounds and PDFsharp flattened export with optional grid.
+- Added native format v2 with v1 migration and asset-aware bounded undo.
+- Added PDF/image persistence and render/export checks, licence inventory and notices.
+- Windows clipboard and UI checks remain pending.
+
+## Starter update 7
+
+- Added image rotation left/right by 90 degrees and a custom-angle dialog.
+- Rotation participates in undo/redo, native saves, internal copying and PDF export.
+- Selection/hit testing and proportional resizing account for image rotation.

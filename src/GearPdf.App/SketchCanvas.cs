@@ -2,10 +2,13 @@
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using GearPdf.Core;
 namespace GearPdf.App;
 public sealed class SketchCanvas : FrameworkElement {
-    public Document Document { get; set; } = new();
+    private Document document=new();
+    private readonly Dictionary<string,BitmapSource> images=[];
+    public Document Document { get=>document; set{document=value;images.Clear();} }
     public History History { get; } = new();
     public int PageIndex { get; set; }
     public Page Page => Document.Pages[PageIndex];
@@ -16,7 +19,8 @@ public sealed class SketchCanvas : FrameworkElement {
     private Vector offset = new(50, 30);
     private Mark? active;
     private Point last;
-    private bool panning, dragging, editing, erasing;
+    private bool panning, dragging, editing, erasing, resizingImage;
+    private Vec imageAnchor=new(0,0);
     private readonly Dictionary<int, Point> touches = [];
     public SketchCanvas() { Focusable = true; ClipToBounds = true; }
     private Point Screen(Vec p) => new(p.X * scale + offset.X, p.Y * scale + offset.Y);
@@ -26,7 +30,8 @@ public sealed class SketchCanvas : FrameworkElement {
     private static Brush BrushFor(string colour, double opacity) { var b = new SolidColorBrush((Color)ColorConverter.ConvertFromString(colour)); b.Opacity = opacity; return b; }
     private Geometry GeometryFor(Mark m) {
         var a=Screen(m.Points[0]); var b=Screen(m.Points[^1]);
-        if (m.Tool == Tool.Rectangle) return new RectangleGeometry(new Rect(a,b));
+        if(m.Tool==Tool.Image){var rect=new Rect(a,b);return new RectangleGeometry(rect){Transform=new RotateTransform(m.RotationDegrees,rect.X+rect.Width/2,rect.Y+rect.Height/2)};}
+        if(m.Tool==Tool.Rectangle)return new RectangleGeometry(new Rect(a,b));
         if (m.Tool == Tool.Ellipse) return new EllipseGeometry(new Rect(a,b));
         var g=new StreamGeometry(); using (var c=g.Open()) { c.BeginFigure(a,false,false); foreach(var p in m.Points.Skip(1)) c.LineTo(Screen(p),true,false); if(m.Points.Count==1)c.LineTo(new(a.X+.01,a.Y),true,false); } return g;
     }
@@ -34,6 +39,7 @@ public sealed class SketchCanvas : FrameworkElement {
         dc.DrawRectangle(new SolidColorBrush(Color.FromRgb(18,27,38)),null,new Rect(RenderSize));
         var paper=new Rect(offset.X,offset.Y,Page.WidthMm*scale,Page.HeightMm*scale);
         dc.DrawRectangle(Brushes.White,null,paper); dc.PushClip(new RectangleGeometry(paper));
+        if(Page.BackgroundImageId is string background)dc.DrawImage(ImageFor(background),paper);
         if(Page.GridOpacity>0) {
             for(int axis=0;axis<2;axis++) {
                 double bound=axis==0?Page.WidthMm:Page.HeightMm;
@@ -46,28 +52,37 @@ public sealed class SketchCanvas : FrameworkElement {
         }
         foreach(var m in Page.Marks.Concat(active is null?Array.Empty<Mark>():new[]{active})) {
             var pen=new Pen(BrushFor(m.Colour,m.Opacity),m.WidthMm*scale) { StartLineCap=PenLineCap.Round, EndLineCap=PenLineCap.Round, LineJoin=PenLineJoin.Round };
-            var geometry=GeometryFor(m); dc.DrawGeometry(null,pen,geometry);
-            if(m.Id==Selected) { var bounds=geometry.Bounds; bounds.Inflate(5,5); dc.DrawRectangle(null,new Pen(Brushes.DodgerBlue,1){DashStyle=DashStyles.Dash},bounds); }
+            var geometry=GeometryFor(m);
+            if(m.Tool==Tool.Image){var rect=new Rect(Screen(m.Points[0]),Screen(m.Points[1]));dc.PushTransform(new RotateTransform(m.RotationDegrees,rect.X+rect.Width/2,rect.Y+rect.Height/2));dc.DrawImage(ImageFor(m.ImageAssetId!),rect);dc.Pop();}else dc.DrawGeometry(null,pen,geometry);
+            if(m.Id==Selected) { var bounds=geometry.Bounds; bounds.Inflate(5,5); dc.DrawRectangle(null,new Pen(Brushes.DodgerBlue,1){DashStyle=DashStyles.Dash},bounds);if(m.Tool==Tool.Image){var corner=Screen(ImageGeometry.Corner(m,true));dc.DrawRectangle(Brushes.White,new Pen(Brushes.DodgerBlue,2),new Rect(corner.X-5,corner.Y-5,10,10));} }
         }
         dc.Pop();
     }
-    private Mark? Hit(Point screen) => Page.Marks.AsEnumerable().Reverse().FirstOrDefault(m => GeometryFor(m).StrokeContains(new Pen(Brushes.Black,Math.Max(10,m.WidthMm*scale+6)), screen));
+    private Mark? Hit(Point screen) => Page.Marks.AsEnumerable().Reverse().FirstOrDefault(m => (m.Tool==Tool.Image && GeometryFor(m).FillContains(screen)) || GeometryFor(m).StrokeContains(new Pen(Brushes.Black,Math.Max(10,m.WidthMm*scale+6)), screen));
     private void Begin(Point p, bool erase=false) {
         Focus(); last=p; var v=World(p); if(!Inside(v)) return;
         erasing=erase || Preset.Tool==Tool.Eraser;
         if(erasing) { editing=true; History.Record(Document); Erase(p); return; }
-        if(Preset.Tool==Tool.Select) { var hit=Hit(p); Selected=hit?.Id; dragging=hit!=null; if(dragging){ History.Record(Document); editing=true; } InvalidateVisual(); return; }
+        if(Preset.Tool==Tool.Select) {
+            var image=Page.Marks.FirstOrDefault(m=>m.Id==Selected && m.Tool==Tool.Image);
+            if(image!=null && (p-Screen(ImageGeometry.Corner(image,true))).Length<=12){History.Record(Document);editing=true;resizingImage=true;imageAnchor=ImageGeometry.Corner(image,false);return;}
+            var hit=Hit(p); Selected=hit?.Id; dragging=hit!=null; if(dragging){ History.Record(Document); editing=true; } InvalidateVisual(); return; }
         History.Record(Document); editing=true;
         active=new(){Tool=Preset.Tool,Colour=Preset.Colour,WidthMm=Preset.WidthMm,Opacity=Preset.Opacity,Points=[v]}; InvalidateVisual();
     }
     private void Erase(Point p) { var m=Hit(p); if(m!=null) Page.Marks.Remove(m); InvalidateVisual(); }
     private void Move(Point p) {
         if(erasing) { Erase(p); return; }
+        if(resizingImage && Selected is Guid imageId){
+            var image=Page.Marks.FirstOrDefault(m=>m.Id==imageId);
+            if(image!=null)image.Points=ImageGeometry.ResizeFromAnchor(image,imageAnchor,World(p),Math.Max(Page.WidthMm,Page.HeightMm)*2);
+            InvalidateVisual();return;
+        }
         if(dragging && Selected is Guid id) { var mark=Page.Marks.FirstOrDefault(m=>m.Id==id); if(mark!=null) { var delta=(p-last)/scale; mark.Points=mark.Points.Select(v=>new Vec(v.X+delta.X,v.Y+delta.Y)).ToList(); } last=p; }
         if(active!=null) { var v=World(p); v=new(Math.Clamp(v.X,0,Page.WidthMm),Math.Clamp(v.Y,0,Page.HeightMm)); if(active.Tool is Tool.Pen or Tool.Highlighter) active.Points.Add(v); else { if(active.Points.Count==1) active.Points.Add(v); else active.Points[^1]=v; } }
         InvalidateVisual();
     }
-    private void End() { if(active!=null) {Page.Marks.Add(active);active=null;} dragging=false;erasing=false; if(editing){ editing=false;Changed?.Invoke(); } InvalidateVisual(); }
+    private void End() { if(active!=null) {Page.Marks.Add(active);active=null;} dragging=false;resizingImage=false;erasing=false; if(editing){ editing=false;Changed?.Invoke(); } InvalidateVisual(); }
     protected override void OnMouseDown(MouseButtonEventArgs e) {
         base.OnMouseDown(e); if(e.StylusDevice!=null)return;
         if(e.ChangedButton==MouseButton.Middle) {panning=true;last=e.GetPosition(this);CaptureMouse();}
@@ -91,6 +106,14 @@ public sealed class SketchCanvas : FrameworkElement {
     protected override void OnTouchUp(TouchEventArgs e) {touches.Remove(e.TouchDevice.Id);e.TouchDevice.Capture(null);e.Handled=true;base.OnTouchUp(e);}
     protected override void OnLostTouchCapture(TouchEventArgs e) {touches.Remove(e.TouchDevice.Id);base.OnLostTouchCapture(e);}
     protected override void OnMouseWheel(MouseWheelEventArgs e) { if(Keyboard.Modifiers.HasFlag(ModifierKeys.Control)){var p=e.GetPosition(this);var v=World(p);scale=Math.Clamp(scale*(e.Delta>0?1.1:1/1.1),.2,20);offset=new(p.X-v.X*scale,p.Y-v.Y*scale);}else offset.Y+=e.Delta*.5;InvalidateVisual();e.Handled=true; }
+    private BitmapSource ImageFor(string id){if(!images.TryGetValue(id,out var image)){image=MediaImport.Decode(Document.Assets[id]);images.Add(id,image);}return image;}
+    public void AddImage(ImageAsset asset){
+        double width=Math.Min(120,Math.Min(Page.WidthMm*.7,asset.PixelWidth*25.4/96)),height=width*asset.PixelHeight/asset.PixelWidth;
+        if(height>Page.HeightMm*.7){width*=Page.HeightMm*.7/height;height=Page.HeightMm*.7;}
+        var centre=World(new Point(ActualWidth/2,ActualHeight/2));double x=Math.Clamp(centre.X-width/2,0,Math.Max(0,Page.WidthMm-width)),y=Math.Clamp(centre.Y-height/2,0,Math.Max(0,Page.HeightMm-height));
+        var candidate=new Document{Pages=Document.Pages,Assets=new(Document.Assets)};string id=Guid.NewGuid().ToString("N");candidate.Assets.Add(id,asset);DocumentFile.Validate(candidate);
+        End();History.Record(Document);Document.Assets.Add(id,asset);var mark=new Mark{Tool=Tool.Image,ImageAssetId=id,Points=[new(x,y),new(x+width,y+height)]};Page.Marks.Add(mark);Selected=mark.Id;Preset=Preset with{Tool=Tool.Select};Changed?.Invoke();InvalidateVisual();
+    }
     public void Refresh() {Selected=null;InvalidateVisual();}
     public void DeleteSelection() { if(Selected is Guid id && Page.Marks.Any(m=>m.Id==id)) {History.Record(Document);Page.Marks.RemoveAll(m=>m.Id==id);Selected=null;Changed?.Invoke();InvalidateVisual();} }
 }

@@ -1,11 +1,13 @@
-# Third-party inventory
+# Third-party notices
 
-This starter declares no third-party NuGet package dependencies and uses no copied Drawboard code, icons or graphics. The gear hub is generated from geometry in this project.
+GEAR source is AGPL-3.0-or-later. See LICENSE. Gear artwork is project geometry; no Drawboard code/assets are included.
 
-Build/runtime dependencies are the Microsoft .NET SDK and Windows Desktop runtime (WPF). Their own distribution notices must accompany any runtime bundled in a self-contained release; inspect the exact publish output before distributing binaries. A source-only archive does not bundle the SDK/runtime.
+PDFsharp 6.2.3: Copyright (c) 2001-2025 empira Software GmbH, MIT. Full notice obtained from its upstream v6.2.3 tag is in licenses/PDFsharp-LICENSE.txt.
 
-Reference documentation consulted: Microsoft WPF Input Overview and Advanced Ink Handling. Documentation was used for API guidance; it is not shipped as project code.
+Docnet.Core 2.6.0: Copyright (c) 2018 Modestas Petravicius, MIT. Full upstream notice in licenses/Docnet-LICENSE.txt.
 
-The `LICENSE` file is GNU's complete AGPLv3 text from https://www.gnu.org/licenses/agpl-3.0.txt . Project source is designated AGPL-3.0-or-later.
+PDFium and its bundled native dependencies: full notice file copied verbatim from Docnet.Core 2.6.0's runtimes/win-x64/native/LICENSE, retained in licenses/PDFium-LICENSE.txt. PDFium itself is BSD licensed; the supplied file includes the package's additional third-party notices. These licences remain separate from the AGPL application source.
 
-No PDF engine/wrapper is included. Its exact licence and complete transitive dependency notices need review when selected. This inventory is not a legal or trademark clearance.
+Microsoft.Extensions dependencies: exact versions in DEPENDENCIES.md; their licence files are copied verbatim from the resolved NuGet packages into licenses/.
+
+.NET app host: its SDK-provided licence and third-party notices are included in the launch folder. The Desktop Runtime itself is not bundled. Source builds restore the packages above. This inventory does not constitute legal or trademark clearance.
