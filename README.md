@@ -6,6 +6,8 @@ A Windows-first sketching and document-markup prototype with a movable gear menu
 
 ## Start on Windows
 
+Latest alpha: **0.9.2-alpha**, packaged as [GEAR-Windows_alpha_0.9.2.zip](Release/GEAR-Windows_alpha_0.9.2.zip). Extract the ZIP before launching.
+
 The compiled `GEAR-Windows` folder requires the **.NET 10 Desktop Runtime x64**. Run `GearPdf.App.exe`. For source development, install the .NET 10 SDK and run:
 
 ```powershell
@@ -39,9 +41,9 @@ dotnet run --project src/GearPdf.App/GearPdf.App.csproj
 
 ## Layers, pages and references
 
-- The right Layers panel lists every image and drawing object, frontmost first. Select a row to select that object, including locked images.
+- The right Layers panel separates images and drawing objects into **Images** and **Strokes** tabs, each frontmost first. **Images** is selected by default. Select a row to select that object, including locked images.
 - **Lock** protects an object from erasing, moving, resizing, rotation, property edits and deletion. **Lock all images** protects images in existing sketches. Unlock an image before positioning it, then lock it again to draw over it.
-- The left checkbox controls visibility, including PDF export. **Forward / Backward / To front / To back** change stacking order, including for locked objects. PDF backgrounds remain fixed beneath all objects.
+- The left checkbox controls visibility, including PDF export. **Forward / Backward / To front / To back** change stacking order across both tabs, including for locked objects. PDF backgrounds remain fixed beneath all objects.
 - Layers are individual objects, not named groups or paint layers. Locking keeps images editable later; no destructive image flattening is applied.
 - In the Pages list, select, add, delete or move a page up/down. One page must remain. Page deletion and reordering support undo/redo.
 - **Page reference** shows a chosen page independently of the working page. Adding a page sets the previous working page as reference. **Enlarge reference** opens a resizable reference window that can be placed beside the editor; use the main reference selector to change it.

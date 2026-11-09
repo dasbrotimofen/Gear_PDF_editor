@@ -332,7 +332,7 @@ var mark=Surface.Page.Marks.FirstOrDefault(m=>m.Id==Surface.Selected);
     private void PageUpClick(object sender,RoutedEventArgs e)=>MovePage(-1);
     private void PageDownClick(object sender,RoutedEventArgs e)=>MovePage(1);
     private void BuildLayers(){
-        if(LayerRows==null)return;LayerRows.Children.Clear();
+        if(ImageLayerRows==null || StrokeLayerRows==null)return;ImageLayerRows.Children.Clear();StrokeLayerRows.Children.Clear();
         foreach(var mark in Surface.Page.Marks.AsEnumerable().Reverse()){
             var row=new DockPanel{Margin=new Thickness(0,2,0,2)};
             var visible=new CheckBox{IsChecked=mark.Visible,ToolTip="Visible in canvas and PDF",VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(4)};
@@ -343,9 +343,9 @@ var mark=Surface.Page.Marks.FirstOrDefault(m=>m.Id==Surface.Selected);
             var select=MakeButton($"{mark.Tool} {number}",()=>{Surface.Selected=mark.Id;Surface.Preset=slots["Select"];activeSlot="Select";gearPropertiesOpen=false;BuildGear();Sync();Surface.Focus();});
             select.Padding=new Thickness(5,7,5,7);select.HorizontalContentAlignment=HorizontalAlignment.Left;
             if(Surface.Selected==mark.Id)select.Background=new SolidColorBrush(Color.FromRgb(70,91,121));
-            select.ToolTip=mark.Tool==Tool.Image?"Unlock to move, resize or rotate":$"{mark.Colour} · {mark.StrokeStyle}";row.Children.Add(select);LayerRows.Children.Add(row);
+            select.ToolTip=mark.Tool==Tool.Image?"Unlock to move, resize or rotate":$"{mark.Colour} · {mark.StrokeStyle}";row.Children.Add(select);(mark.Tool==Tool.Image?ImageLayerRows:StrokeLayerRows).Children.Add(row);
         }
-        if(Surface.Page.BackgroundImageId!=null)LayerRows.Children.Add(new TextBlock{Text="PDF background · locked",Margin=new Thickness(8)});
+        if(Surface.Page.BackgroundImageId!=null)ImageLayerRows.Children.Add(new TextBlock{Text="PDF background · locked",Margin=new Thickness(8)});
     }
     private void MoveLayer(int direction,bool edge=false){
         if(Surface.Selected is not Guid id)return;int index=Surface.Page.Marks.FindIndex(m=>m.Id==id);if(index<0)return;

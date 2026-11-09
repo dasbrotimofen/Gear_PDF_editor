@@ -59,3 +59,8 @@
 - Disabled WPF flicks on sketch surfaces; added Ctrl+Shift+Z redo.
 - Native format v3 preserves layer flags and styles; v1/v2 files remain readable.
 - Pinned the PDF dependency's System.Security.Cryptography.Pkcs package to 10.0.13 in response to NuGet vulnerability warnings.
+
+## 0.9.2-alpha — 2026-11-09
+
+- Split the Layers panel into Images and Strokes tabs, with Images selected by default.
+- Kept selection, lock, visibility and document-wide stacking controls for both tabs; fixed PDF backgrounds appear under Images.

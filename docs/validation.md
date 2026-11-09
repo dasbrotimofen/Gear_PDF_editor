@@ -40,3 +40,10 @@ Three-pen gear and draggable orientation-switching favourites bar compiled and W
 ## Starter update 7
 
 Image-angle persistence, rotation undo/redo and rotated resize-anchor/aspect checks passed. The solution built with zero warnings/errors; Windows x64 Release publish completed. A PDF sample containing a 30-degree rotated image was rendered and visually inspected. Windows context-menu and pointer interaction remain pending.
+
+## 0.9.2-alpha — 2026-11-09
+
+- Windows x64 build with temporary .NET SDK 10.0.403: zero warnings/errors.
+- Core.Checks and Pdf.Checks passed, including PDFium import/export checks.
+- Windows x64 framework-dependent Release publish completed; packaged with licences and release notes.
+- Images/Strokes tab interaction and physical pen/touch acceptance checks remain pending.

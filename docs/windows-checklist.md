@@ -54,3 +54,5 @@ Do not treat successful compilation or model checks as validation of pen/touch b
 - Exercise solid/dotted/dashed/dot-dash with pens, highlighter, line, rectangle and ellipse. Inspect favourites, annotation property edits, reopen and export.
 - Add/delete/reorder pages including first/last, mixed sizes and imported PDF pages. Undo/redo; at least one page must remain.
 - Choose a reference page, draw on a different page, enlarge/resize/move the reference window. Reorder/delete/reference pages; undo/redo and reopen another document while it is visible.
+
+- Confirm Layers opens on Images; drawing strokes only adds rows under Strokes. Switch tabs and verify selection, lock/visibility, undo/redo and front/back ordering across images and strokes. Imported PDF backgrounds appear only under Images.
