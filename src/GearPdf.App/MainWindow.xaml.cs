@@ -14,6 +14,9 @@ namespace GearPdf.App;
 public partial class MainWindow : Window {
     private string? path, importedPdfPath;
     private bool dirty, syncing;
+    private int referenceIndex;
+    private Window? referenceWindow;
+    private SketchCanvas? enlargedReference;
     private Mark? clipboard;
     private ImageAsset? clipboardAsset;
     private string? clipboardToken;
@@ -47,12 +50,12 @@ public partial class MainWindow : Window {
         ["#f7cd38"]=["#f7cd38","#e4a817","#f28c28","#fff1a1","#c8a52d","#fffbd6"]
     };
     public MainWindow() {
-        InitializeComponent(); Surface.Changed+=Changed; BuildGear(); BuildFavourites();
-        var menu=new ContextMenu(); foreach(var label in new[]{"Cut","Copy","Paste","Delete","Properties","Rotate left 90°","Rotate right 90°","Rotate image…"}) {var item=new MenuItem{Header=label};item.Click+=(_,_)=>ContextAction(label);menu.Items.Add(item);} menu.Opened+=(_,_)=>{bool image=Surface.Page.Marks.Any(m=>m.Id==Surface.Selected && m.Tool==Tool.Image);foreach(MenuItem item in menu.Items)if(item.Header is string label && label.StartsWith("Rotate"))item.IsEnabled=image;};Surface.ContextMenu=menu;
+        InitializeComponent(); Surface.Changed+=Changed; Surface.SelectionChanged+=BuildLayers; BuildGear(); BuildFavourites();
+        var menu=new ContextMenu(); foreach(var label in new[]{"Cut","Copy","Paste","Delete","Properties","Rotate left 90°","Rotate right 90°","Rotate image…"}) {var item=new MenuItem{Header=label};item.Click+=(_,_)=>ContextAction(label);menu.Items.Add(item);} menu.Opened+=(_,_)=>{var selected=Surface.Page.Marks.FirstOrDefault(m=>m.Id==Surface.Selected);foreach(MenuItem item in menu.Items)if(item.Header is string label){item.IsEnabled=label switch {"Copy"=>selected!=null,"Cut" or "Delete" or "Properties"=>selected!=null && !selected.Locked,_ when label.StartsWith("Rotate")=>selected?.Tool==Tool.Image && !selected.Locked,_=>true};}};Surface.ContextMenu=menu;
         Surface.Preset=slots[activeSlot]; Loaded+=(_,_)=>{Surface.Fit();Sync();};
     }
     private void Changed(){dirty=true;Sync();}
-    private void Sync(){syncing=true;GridOpacity.Value=Surface.Page.GridOpacity*100;PageLabel.Text=$"{Surface.PageIndex+1}/{Surface.Document.Pages.Count}";Status.Text=$"{activeSlot} · {Surface.Preset.WidthMm:0.##} mm · {Surface.Preset.Opacity:P0}    |    {Surface.Page.WidthMm} × {Surface.Page.HeightMm} mm    |    {Surface.Page.Marks.Count} objects";Title=$"{(dirty?"* ":"")}GEAR PDF Editor — {(path is null?"Untitled":System.IO.Path.GetFileName(path))}";syncing=false;Surface.InvalidateVisual();}
+    private void Sync(){syncing=true;GridOpacity.Value=Surface.Page.GridOpacity*100;PageLabel.Text=$"{Surface.PageIndex+1}/{Surface.Document.Pages.Count}";Status.Text=$"{activeSlot} · {Surface.Preset.WidthMm:0.##} mm · {Surface.Preset.Opacity:P0} · {Surface.Preset.StrokeStyle}    |    {Surface.Page.WidthMm} × {Surface.Page.HeightMm} mm    |    {Surface.Page.Marks.Count} objects";Title=$"{(dirty?"* ":"")}GEAR PDF Editor — {(path is null?"Untitled":System.IO.Path.GetFileName(path))}";BuildPageList();BuildLayers();BuildReference();syncing=false;Surface.InvalidateVisual();}
     private Button MakeButton(string text,Action action){var b=new Button{Content=text};b.Click+=(_,_)=>action();return b;}
     private static Point Polar(double radius, double angle) => new(GearCanvasCentre + radius*Math.Cos(angle), GearCanvasCentre + radius*Math.Sin(angle));
     private static Geometry GearOutline(double outer, double root) {
@@ -87,7 +90,7 @@ public partial class MainWindow : Window {
             var names=GearTools;
             for(int i=0;i<names.Length;i++) {
                 string name=names[i];var sector=new System.Windows.Shapes.Path{Data=ToolSector(i),Fill=new SolidColorBrush(name==activeSlot?Color.FromRgb(87,68,39):Color.FromRgb(37,52,72)),Stroke=new SolidColorBrush(Color.FromRgb(83,103,127)),StrokeThickness=1};
-                var button=new Button{Width=660,Height=660,Margin=new Thickness(0),Padding=new Thickness(0),Background=Brushes.Transparent,ToolTip=name,Cursor=Cursors.Hand};
+                var button=new Button{Width=660,Height=660,Margin=new Thickness(0),Padding=new Thickness(0),Background=Brushes.Transparent,ToolTip=name,Cursor=Cursors.Hand,Focusable=false,ClickMode=ClickMode.Press};
                 var template=new ControlTemplate(typeof(Button));
                 var presenter=new FrameworkElementFactory(typeof(ContentPresenter));template.VisualTree=presenter;button.Template=template;
                 var visual=new Canvas{Width=660,Height=660};visual.Children.Add(sector);
@@ -104,7 +107,7 @@ public partial class MainWindow : Window {
                 }
                 button.Content=visual;
                 // A canvas with no background only hits its sector; the transparent button must be clipped too.
-                button.Clip=ToolSector(i);button.Click+=(_,_)=>{Activate(name);BuildGear();};
+                button.Clip=ToolSector(i);BindRadialAction(button,()=>{Activate(name);BuildGear();Surface.Focus();});
                 ring.Children.Add(button);
             }
             Gear.Children.Add(ring);
@@ -125,6 +128,12 @@ public partial class MainWindow : Window {
         Canvas.SetLeft(hub,GearCanvasCentre-43);Canvas.SetTop(hub,GearCanvasCentre-43);Gear.Children.Add(hub);
         PositionGear();
     }
+    private void BindRadialAction(Button button,Action action){
+        // Handle real pen/touch taps directly; suppress the promoted mouse event.
+        button.PreviewStylusDown+=(_,e)=>{if(e.StylusDevice.TabletDevice.Type==TabletDeviceType.Touch)return;e.Handled=true;Dispatcher.BeginInvoke(action);};
+        button.PreviewTouchDown+=(_,e)=>{e.Handled=true;Dispatcher.BeginInvoke(action);};
+        button.Click+=(_,_)=>Dispatcher.BeginInvoke(action);
+    }
     private void StartGearDrag(Point pointer){gearDragging=true;gearMoved=false;gearDragStart=pointer;gearDragOrigin=gearCentre;}
     private void MoveGearDrag(Point pointer){var delta=pointer-gearDragStart;if(delta.Length>5)gearMoved=true;if(gearMoved){gearCentre=gearDragOrigin+delta;PositionGear();}}
     private bool FinishGearDrag(){bool click=gearDragging&&!gearMoved;gearDragging=false;return click;}
@@ -138,7 +147,7 @@ public partial class MainWindow : Window {
     }
     private static double ClampGearAxis(double value,double extent,double radius) => extent<radius*2?extent/2:Math.Clamp(value,radius,extent-radius);
     private void GearHostSizeChanged(object sender,SizeChangedEventArgs e){PositionGear();PositionFavouriteBar();}
-    private void Activate(string name){if(activeSlot==name){ShowProperties();return;}if(name=="Eraser" && Surface.Preset.Tool!=Tool.Eraser){beforeEraseSlot=activeSlot;beforeErasePreset=Surface.Preset;}if(name is "Pen 1" or "Pen 2" or "Pen 3")lastPenSlot=name;activeSlot=name;Surface.Preset=slots[name];gearPropertiesOpen=false;Sync();}
+    private void Activate(string name){if(activeSlot==name && Surface.Preset==slots[name]){Surface.Preset=slots[name];ShowProperties();Surface.Focus();return;}if(name=="Eraser" && Surface.Preset.Tool!=Tool.Eraser){beforeEraseSlot=activeSlot;beforeErasePreset=Surface.Preset;}if(name is "Pen 1" or "Pen 2" or "Pen 3")lastPenSlot=name;activeSlot=name;Surface.Preset=slots[name];gearPropertiesOpen=false;Surface.Focus();Sync();}
     private void ShowProperties(){if(Surface.Preset.Tool is Tool.Eraser or Tool.Select)return;gearExpanded=true;gearPropertiesOpen=true;propertyCategory="Colour";colourFamily=null;BuildGear();}
     private static Geometry PropertySector(double inner,double outer,double start,double end){
         var geometry=new StreamGeometry();using(var c=geometry.Open()){
@@ -154,18 +163,20 @@ public partial class MainWindow : Window {
         var pos=Polar((inner+outer)/2,(start+end)/2);
         if(colour!=null){var swatch=new Border{Width=30,Height=24,Background=new SolidColorBrush((Color)ColorConverter.ConvertFromString(colour)),BorderBrush=Brushes.White,BorderThickness=new Thickness(2),CornerRadius=new CornerRadius(4),IsHitTestVisible=false};Canvas.SetLeft(swatch,pos.X-15);Canvas.SetTop(swatch,pos.Y-12);visual.Children.Add(swatch);}
         else {var text=new TextBlock{Text=label,Foreground=Brushes.White,FontSize=12,Width=72,TextAlignment=TextAlignment.Center,VerticalAlignment=VerticalAlignment.Center,IsHitTestVisible=false};Canvas.SetLeft(text,pos.X-36);Canvas.SetTop(text,pos.Y-8);visual.Children.Add(text);}
-        var button=new Button{Width=660,Height=660,Margin=new Thickness(0),Padding=new Thickness(0),Content=visual,Clip=shape,ToolTip=label,Background=Brushes.Transparent,Cursor=Cursors.Hand};
-        var template=new ControlTemplate(typeof(Button)){VisualTree=new FrameworkElementFactory(typeof(ContentPresenter))};button.Template=template;button.Click+=(_,_)=>action();Gear.Children.Add(button);
+        var button=new Button{Width=660,Height=660,Margin=new Thickness(0),Padding=new Thickness(0),Content=visual,Clip=shape,ToolTip=label,Background=Brushes.Transparent,Cursor=Cursors.Hand,Focusable=false,ClickMode=ClickMode.Press};
+        var template=new ControlTemplate(typeof(Button)){VisualTree=new FrameworkElementFactory(typeof(ContentPresenter))};button.Template=template;BindRadialAction(button,action);Gear.Children.Add(button);
     }
     private void BuildPropertyLayers(){
-        var categories=new[]{"Colour","Width","Opacity"};double span=Math.PI*2/3;
-        for(int i=0;i<categories.Length;i++){string category=categories[i];double start=PropertyAngle-span/2+i*span/3;PropertyChoice(category,166,218,start,start+span/3,()=>{propertyCategory=category;colourFamily=null;BuildGear();},selected:propertyCategory==category);}
+        var categories=new[]{"Colour","Width","Opacity","Style"};double span=Math.PI*2/3;
+        for(int i=0;i<categories.Length;i++){string category=categories[i];double start=PropertyAngle-span/2+i*span/categories.Length;PropertyChoice(category,166,218,start,start+span/categories.Length,()=>{propertyCategory=category;colourFamily=null;BuildGear();},selected:propertyCategory==category);}
         var choices=new List<(string Label,string? Colour,Action Apply,bool Selected)>();
         if(propertyCategory=="Colour"){
             var values=colourFamily is null?families.Keys.ToArray():families[colourFamily];
             foreach(var value in values){string colour=value;choices.Add((colour,colour,()=>{if(colourFamily is null && Surface.Preset.Colour==colour){colourFamily=colour;BuildGear();}else SetPreset(Surface.Preset with{Colour=colour});},Surface.Preset.Colour==colour));}
         }else if(propertyCategory=="Width"){
             foreach(double value in new[]{.25,.5,.75,1,1.5,2,3,5}){double width=value;choices.Add(($"{width:0.##} mm",null,()=>SetPreset(Surface.Preset with{WidthMm=width}),Surface.Preset.WidthMm==width));}
+        }else if(propertyCategory=="Style"){
+            foreach(var value in Enum.GetValues<StrokeStyle>()){var style=value;choices.Add((style==StrokeStyle.DotDashed?"Dot-dash":style.ToString(),null,()=>SetPreset(Surface.Preset with{StrokeStyle=style}),Surface.Preset.StrokeStyle==style));}
         }else{
             foreach(double value in new[]{.25,.5,.75,1}){double opacity=value;choices.Add(($"{opacity:P0}",null,()=>SetPreset(Surface.Preset with{Opacity=opacity}),Surface.Preset.Opacity==opacity));}
         }
@@ -206,8 +217,8 @@ public partial class MainWindow : Window {
     private void FavouriteHandleLostTouchCapture(object sender,TouchEventArgs e)=>favouriteDragging=false;
     private void FavouriteClick(object sender,RoutedEventArgs e){if(Surface.Preset.Tool is Tool.Select or Tool.Eraser)return;favourites.Add(Surface.Preset with{});BuildFavourites();}
     private bool ConfirmDiscard(){if(!dirty)return true;var answer=MessageBox.Show(this,"Save your sketch before continuing?","Unsaved sketch",MessageBoxButton.YesNoCancel);return answer==MessageBoxResult.No || (answer==MessageBoxResult.Yes && Save(false));}
-    private void NewClick(object sender,RoutedEventArgs e){if(!ConfirmDiscard())return;Surface.Document=new();importedPdfPath=null;Surface.PageIndex=0;Surface.History.Clear();Surface.Refresh();path=null;dirty=false;Surface.Fit();Sync();}
-    private void OpenClick(object sender,RoutedEventArgs e){if(!ConfirmDiscard())return;var dialog=new OpenFileDialog{Filter="GEAR sketch (*.gear)|*.gear"};if(dialog.ShowDialog(this)!=true)return;try{if(new FileInfo(dialog.FileName).Length>200L*1024*1024)throw new InvalidDataException("Sketch exceeds the 200 MB starter limit.");var doc=DocumentFile.Decode(File.ReadAllText(dialog.FileName));foreach(var asset in doc.Assets.Values)MediaImport.Decode(asset);Surface.Document=doc;importedPdfPath=null;Surface.PageIndex=0;Surface.History.Clear();Surface.Refresh();path=dialog.FileName;dirty=false;Surface.Fit();Sync();}catch(Exception ex){MessageBox.Show(this,ex.Message,"Unable to open sketch");}}
+    private void NewClick(object sender,RoutedEventArgs e){if(!ConfirmDiscard())return;referenceIndex=0;Surface.Document=new();importedPdfPath=null;Surface.PageIndex=0;Surface.History.Clear();Surface.Refresh();path=null;dirty=false;Surface.Fit();Sync();}
+    private void OpenClick(object sender,RoutedEventArgs e){if(!ConfirmDiscard())return;var dialog=new OpenFileDialog{Filter="GEAR sketch (*.gear)|*.gear"};if(dialog.ShowDialog(this)!=true)return;try{if(new FileInfo(dialog.FileName).Length>200L*1024*1024)throw new InvalidDataException("Sketch exceeds the 200 MB starter limit.");var doc=DocumentFile.Decode(File.ReadAllText(dialog.FileName));foreach(var asset in doc.Assets.Values)MediaImport.Decode(asset);referenceIndex=0;Surface.Document=doc;importedPdfPath=null;Surface.PageIndex=0;Surface.History.Clear();Surface.Refresh();path=dialog.FileName;dirty=false;Surface.Fit();Sync();}catch(Exception ex){MessageBox.Show(this,ex.Message,"Unable to open sketch");}}
     private bool Save(bool saveAs){var target=path;if(saveAs || target is null){var dialog=new SaveFileDialog{Filter="GEAR sketch (*.gear)|*.gear",DefaultExt=".gear",FileName=path is null?"Sketch.gear":System.IO.Path.GetFileName(path)};if(dialog.ShowDialog(this)!=true)return false;target=dialog.FileName;}try{DocumentFile.Save(target!,Surface.Document);path=target;dirty=false;Sync();return true;}catch(Exception ex){MessageBox.Show(this,ex.Message,"Unable to save sketch");return false;}}
     private void SaveClick(object sender,RoutedEventArgs e)=>Save(false);
     private void SaveAsClick(object sender,RoutedEventArgs e)=>Save(true);
@@ -216,17 +227,17 @@ public partial class MainWindow : Window {
     private void FitClick(object sender,RoutedEventArgs e)=>Surface.Fit();
     private void PaperChanged(object sender,SelectionChangedEventArgs e){if(Surface is null || syncing)return;Surface.History.Record(Surface.Document);var dims=PaperSize.SelectedIndex switch{1=>(297d,210d),2=>(297d,420d),3=>(420d,297d),4=>(215.9,279.4),_=>(210d,297d)};Surface.Page.WidthMm=dims.Item1;Surface.Page.HeightMm=dims.Item2;Surface.Fit();Changed();}
     private void GridChanged(object sender,RoutedPropertyChangedEventArgs<double> e){if(Surface is null || syncing)return;Surface.Page.GridOpacity=e.NewValue/100;Changed();}
-    private void AddPageClick(object sender,RoutedEventArgs e){Surface.History.Record(Surface.Document);var p=Surface.Page;Surface.Document.Pages.Add(new(){WidthMm=p.WidthMm,HeightMm=p.HeightMm,GridOpacity=p.GridOpacity});Surface.PageIndex=Surface.Document.Pages.Count-1;Surface.Refresh();Changed();}
+    private void AddPageClick(object sender,RoutedEventArgs e){if(Surface.Document.Pages.Count>=1000)return;Surface.History.Record(Surface.Document);var p=Surface.Page;Surface.Document.Pages.Add(new(){WidthMm=p.WidthMm,HeightMm=p.HeightMm,GridOpacity=p.GridOpacity});referenceIndex=Surface.PageIndex;Surface.PageIndex=Surface.Document.Pages.Count-1;Surface.Refresh();Surface.Fit();Changed();}
     private void PreviousClick(object sender,RoutedEventArgs e){Surface.PageIndex=Math.Max(0,Surface.PageIndex-1);Surface.Refresh();Surface.Fit();Sync();}
     private void NextClick(object sender,RoutedEventArgs e){Surface.PageIndex=Math.Min(Surface.Document.Pages.Count-1,Surface.PageIndex+1);Surface.Refresh();Surface.Fit();Sync();}
-    private static Mark Clone(Mark m)=>new(){Tool=m.Tool,Colour=m.Colour,WidthMm=m.WidthMm,Opacity=m.Opacity,Points=m.Points.ToList(),ImageAssetId=m.ImageAssetId,RotationDegrees=m.RotationDegrees};
+    private static Mark Clone(Mark m)=>new(){Tool=m.Tool,Colour=m.Colour,WidthMm=m.WidthMm,Opacity=m.Opacity,Points=m.Points.ToList(),ImageAssetId=m.ImageAssetId,RotationDegrees=m.RotationDegrees,StrokeStyle=m.StrokeStyle,Locked=m.Tool==Tool.Image,Visible=m.Visible};
     private async void ImportPdfClick(object sender,RoutedEventArgs e){
         if(!ConfirmDiscard())return;
         var dialog=new OpenFileDialog{Filter="PDF documents (*.pdf)|*.pdf",Title="Import PDF as page backgrounds"};if(dialog.ShowDialog(this)!=true)return;
         IsEnabled=false;
         try{
             var doc=await PdfImporter.ImportAsync(dialog.FileName,new Progress<string>(text=>Status.Text=text));
-            Surface.Document=doc;Surface.PageIndex=0;Surface.History.Clear();Surface.Refresh();importedPdfPath=dialog.FileName;path=null;dirty=true;Surface.Fit();
+            referenceIndex=0;Surface.Document=doc;Surface.PageIndex=0;Surface.History.Clear();Surface.Refresh();importedPdfPath=dialog.FileName;path=null;dirty=true;Surface.Fit();
         }catch(Exception ex){MessageBox.Show(this,ex.Message,"Unable to import PDF");}
         finally{IsEnabled=true;Sync();}
     }
@@ -265,21 +276,89 @@ public partial class MainWindow : Window {
     private void ContextAction(string label){
         if(label=="Paste" && !OwnClipboard() && PasteClipboardImage(false))return;
 var mark=Surface.Page.Marks.FirstOrDefault(m=>m.Id==Surface.Selected);
+        if(mark?.Locked==true && label is not ("Copy" or "Paste"))return;
         if(label.StartsWith("Rotate") && mark?.Tool==Tool.Image){if(label=="Rotate image…")RotationDialog(mark);else RotateImage(mark,mark.RotationDegrees+(label=="Rotate left 90°"?-90:90));return;}
         if(label=="Properties" && mark?.Tool==Tool.Image){RotationDialog(mark);return;}
-        if(label is "Copy" or "Cut"){if(mark==null)return;clipboard=Clone(mark);clipboardAsset=mark.ImageAssetId is string imageId?Surface.Document.Assets[imageId]:null;clipboardToken=Guid.NewGuid().ToString("N");var data=new DataObject();data.SetData("GEAR.Annotation",clipboardToken);if(clipboardAsset!=null)data.SetImage(MediaImport.Decode(clipboardAsset));try{Clipboard.SetDataObject(data,true);}catch(Exception ex){MessageBox.Show(this,ex.Message,"Unable to copy annotation");return;}if(label=="Cut")Surface.DeleteSelection();}else if(label=="Paste" && clipboard!=null && OwnClipboard()){Surface.History.Record(Surface.Document);var copy=Clone(clipboard);if(copy.Tool==Tool.Image && clipboardAsset!=null){string id=Guid.NewGuid().ToString("N");Surface.Document.Assets.Add(id,clipboardAsset);copy.ImageAssetId=id;}copy.Points=copy.Points.Select(p=>new Vec(p.X+5,p.Y+5)).ToList();Surface.Page.Marks.Add(copy);Surface.Selected=copy.Id;Changed();}else if(label=="Delete")Surface.DeleteSelection();else if(label=="Properties" && mark!=null && mark.Tool!=Tool.Image){var dialog=new Window{Title="Annotation properties",Owner=this,Width=310,Height=230,WindowStartupLocation=WindowStartupLocation.CenterOwner};var panel=new StackPanel{Margin=new(15)};var colour=new TextBox{Text=mark.Colour,Margin=new(0,5,0,5)};var width=new TextBox{Text=mark.WidthMm.ToString(System.Globalization.CultureInfo.InvariantCulture),Margin=new(0,5,0,5)};var opacity=new Slider{Minimum=0,Maximum=1,Value=mark.Opacity};panel.Children.Add(new Label{Content="Colour (#RRGGBB), width (mm), opacity"});panel.Children.Add(colour);panel.Children.Add(width);panel.Children.Add(opacity);panel.Children.Add(MakeButton("Apply",()=>{if(!System.Text.RegularExpressions.Regex.IsMatch(colour.Text,"^#[0-9a-fA-F]{6}$") || !double.TryParse(width.Text,System.Globalization.NumberStyles.Float,System.Globalization.CultureInfo.InvariantCulture,out double w) || !double.IsFinite(w) || w is <=0 or >50){MessageBox.Show(dialog,"Enter #RRGGBB and a width between 0 and 50 mm.");return;}Surface.History.Record(Surface.Document);mark.Colour=colour.Text;mark.WidthMm=w;mark.Opacity=opacity.Value;Changed();dialog.Close();}));dialog.Content=panel;dialog.ShowDialog();}Surface.InvalidateVisual();}
+        if(label is "Copy" or "Cut"){if(mark==null)return;clipboard=Clone(mark);clipboardAsset=mark.ImageAssetId is string imageId?Surface.Document.Assets[imageId]:null;clipboardToken=Guid.NewGuid().ToString("N");var data=new DataObject();data.SetData("GEAR.Annotation",clipboardToken);if(clipboardAsset!=null)data.SetImage(MediaImport.Decode(clipboardAsset));try{Clipboard.SetDataObject(data,true);}catch(Exception ex){MessageBox.Show(this,ex.Message,"Unable to copy annotation");return;}if(label=="Cut")Surface.DeleteSelection();}else if(label=="Paste" && clipboard!=null && OwnClipboard()){Surface.History.Record(Surface.Document);var copy=Clone(clipboard);if(copy.Tool==Tool.Image && clipboardAsset!=null){string id=Guid.NewGuid().ToString("N");Surface.Document.Assets.Add(id,clipboardAsset);copy.ImageAssetId=id;}copy.Points=copy.Points.Select(p=>new Vec(p.X+5,p.Y+5)).ToList();Surface.Page.Marks.Add(copy);Surface.Selected=copy.Id;Changed();}else if(label=="Delete")Surface.DeleteSelection();else if(label=="Properties" && mark!=null && mark.Tool!=Tool.Image){var dialog=new Window{Title="Annotation properties",Owner=this,Width=330,Height=295,WindowStartupLocation=WindowStartupLocation.CenterOwner};var panel=new StackPanel{Margin=new(15)};var colour=new TextBox{Text=mark.Colour,Margin=new(0,5,0,5)};var width=new TextBox{Text=mark.WidthMm.ToString(System.Globalization.CultureInfo.InvariantCulture),Margin=new(0,5,0,5)};var opacity=new Slider{Minimum=0,Maximum=1,Value=mark.Opacity};panel.Children.Add(new Label{Content="Colour (#RRGGBB), width (mm), opacity"});panel.Children.Add(colour);panel.Children.Add(width);panel.Children.Add(opacity);var styleBox=new ComboBox{ItemsSource=Enum.GetValues<StrokeStyle>(),SelectedItem=mark.StrokeStyle,Foreground=Brushes.Black,Margin=new Thickness(0,8,0,8)};panel.Children.Add(styleBox);panel.Children.Add(MakeButton("Apply",()=>{if(!System.Text.RegularExpressions.Regex.IsMatch(colour.Text,"^#[0-9a-fA-F]{6}$") || !double.TryParse(width.Text,System.Globalization.NumberStyles.Float,System.Globalization.CultureInfo.InvariantCulture,out double w) || !double.IsFinite(w) || w is <=0 or >50){MessageBox.Show(dialog,"Enter #RRGGBB and a width between 0 and 50 mm.");return;}Surface.History.Record(Surface.Document);mark.Colour=colour.Text;mark.WidthMm=w;mark.Opacity=opacity.Value;mark.StrokeStyle=(StrokeStyle)styleBox.SelectedItem;Changed();dialog.Close();}));dialog.Content=panel;dialog.ShowDialog();}Surface.InvalidateVisual();}
     private void OnKeyDown(object sender,KeyEventArgs e){
         if(e.OriginalSource is System.Windows.Controls.Primitives.TextBoxBase or PasswordBox)return;
         if(Keyboard.Modifiers==ModifierKeys.None && e.Key is Key.E or Key.P){
             if(!e.IsRepeat){
                 if(e.Key==Key.E){
-                    if(Surface.Preset.Tool==Tool.Eraser){activeSlot=beforeEraseSlot;Surface.Preset=beforeErasePreset;gearPropertiesOpen=false;Sync();}
+                    if(Surface.Preset.Tool==Tool.Eraser){activeSlot=beforeEraseSlot;Surface.Preset=beforeErasePreset;gearPropertiesOpen=false;Surface.Focus();Sync();}
                     else Activate("Eraser");
                 }else if(activeSlot!=lastPenSlot)Activate(lastPenSlot);
                 BuildGear();
             }
             e.Handled=true;return;
         }
-        if(e.Key==Key.Escape){if(gearExpanded){gearExpanded=false;gearPropertiesOpen=false;BuildGear();}e.Handled=true;return;}if(Keyboard.Modifiers.HasFlag(ModifierKeys.Control)){switch(e.Key){case Key.S:Save(Keyboard.Modifiers.HasFlag(ModifierKeys.Shift));break;case Key.Z:UndoClick(this,e);break;case Key.Y:RedoClick(this,e);break;case Key.C:ContextAction("Copy");break;case Key.X:ContextAction("Cut");break;case Key.V:ContextAction("Paste");break;default:return;}e.Handled=true;}else if(e.Key==Key.Delete){Surface.DeleteSelection();e.Handled=true;}}
+        if(e.Key==Key.Escape){if(gearExpanded){gearExpanded=false;gearPropertiesOpen=false;BuildGear();}e.Handled=true;return;}if(Keyboard.Modifiers.HasFlag(ModifierKeys.Control)){switch(e.Key){case Key.S:Save(Keyboard.Modifiers.HasFlag(ModifierKeys.Shift));break;case Key.Z:if(Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))RedoClick(this,e);else UndoClick(this,e);break;case Key.Y:RedoClick(this,e);break;case Key.C:ContextAction("Copy");break;case Key.X:ContextAction("Cut");break;case Key.V:ContextAction("Paste");break;default:return;}e.Handled=true;}else if(e.Key==Key.Delete){Surface.DeleteSelection();e.Handled=true;}}
+    private void BuildReference(){
+        if(ReferencePage==null)return;
+        referenceIndex=Math.Clamp(referenceIndex,0,Surface.Document.Pages.Count-1);
+        ReferencePage.Items.Clear();for(int i=0;i<Surface.Document.Pages.Count;i++)ReferencePage.Items.Add($"Page {i+1}");ReferencePage.SelectedIndex=referenceIndex;
+        UpdateReference();
+    }
+    private void UpdateReference(){
+        ReferenceSurface.Document=Surface.Document;ReferenceSurface.PageIndex=referenceIndex;ReferenceSurface.Fit();
+        if(enlargedReference!=null){enlargedReference.Document=Surface.Document;enlargedReference.PageIndex=referenceIndex;enlargedReference.Fit();if(referenceWindow!=null)referenceWindow.Title=$"Reference · Page {referenceIndex+1}";}
+    }
+    private void ReferencePageSelected(object sender,SelectionChangedEventArgs e){if(syncing || ReferencePage.SelectedIndex<0 || Surface==null)return;referenceIndex=ReferencePage.SelectedIndex;UpdateReference();}
+    private void ReferenceSizeChanged(object sender,SizeChangedEventArgs e){if(ReferenceSurface!=null)ReferenceSurface.Fit();}
+    private void EnlargeReferenceClick(object sender,RoutedEventArgs e){
+        if(referenceWindow!=null){referenceWindow.Activate();return;}
+        enlargedReference=new SketchCanvas{IsHitTestVisible=false,Focusable=false};
+        referenceWindow=new Window{Owner=this,Title=$"Reference · Page {referenceIndex+1}",Width=550,Height=750,Content=enlargedReference};
+        referenceWindow.SizeChanged+=(_,_)=>enlargedReference?.Fit();referenceWindow.Closed+=(_,_)=>{referenceWindow=null;enlargedReference=null;};
+        referenceWindow.Show();UpdateReference();Surface.Focus();
+    }
+    private void BuildPageList(){
+        if(PagesList==null)return;
+        PagesList.Items.Clear();for(int i=0;i<Surface.Document.Pages.Count;i++)PagesList.Items.Add($"Page {i+1}");
+        PagesList.SelectedIndex=Surface.PageIndex;DeletePageButton.IsEnabled=Surface.Document.Pages.Count>1;
+    }
+    private void PageSelected(object sender,SelectionChangedEventArgs e){
+        if(syncing || Surface==null || PagesList.SelectedIndex<0)return;
+        Surface.PageIndex=PagesList.SelectedIndex;Surface.Refresh();Surface.Fit();Sync();
+    }
+    private void DeletePageClick(object sender,RoutedEventArgs e){
+        if(Surface.Document.Pages.Count<=1)return;
+        var reference=Surface.Document.Pages[referenceIndex];Surface.History.Record(Surface.Document);Surface.PageIndex=PageEditing.DeletePage(Surface.Document,Surface.PageIndex);referenceIndex=Math.Max(0,Surface.Document.Pages.IndexOf(reference));Surface.Refresh();Surface.Fit();Changed();
+    }
+    private void MovePage(int direction){
+        int target=Surface.PageIndex+direction;if(target<0 || target>=Surface.Document.Pages.Count)return;
+        var reference=Surface.Document.Pages[referenceIndex];Surface.History.Record(Surface.Document);Surface.PageIndex=PageEditing.MovePage(Surface.Document,Surface.PageIndex,direction);referenceIndex=Surface.Document.Pages.IndexOf(reference);Changed();
+    }
+    private void PageUpClick(object sender,RoutedEventArgs e)=>MovePage(-1);
+    private void PageDownClick(object sender,RoutedEventArgs e)=>MovePage(1);
+    private void BuildLayers(){
+        if(LayerRows==null)return;LayerRows.Children.Clear();
+        foreach(var mark in Surface.Page.Marks.AsEnumerable().Reverse()){
+            var row=new DockPanel{Margin=new Thickness(0,2,0,2)};
+            var visible=new CheckBox{IsChecked=mark.Visible,ToolTip="Visible in canvas and PDF",VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(4)};
+            visible.Click+=(_,_)=>{Surface.History.Record(Surface.Document);mark.Visible=visible.IsChecked==true;Changed();};DockPanel.SetDock(visible,Dock.Left);row.Children.Add(visible);
+            var locked=new CheckBox{Content="Lock",Foreground=Brushes.White,IsChecked=mark.Locked,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(3)};
+            locked.Click+=(_,_)=>{Surface.History.Record(Surface.Document);mark.Locked=locked.IsChecked==true;Changed();};DockPanel.SetDock(locked,Dock.Right);row.Children.Add(locked);
+            int number=Surface.Page.Marks.IndexOf(mark)+1;
+            var select=MakeButton($"{mark.Tool} {number}",()=>{Surface.Selected=mark.Id;Surface.Preset=slots["Select"];activeSlot="Select";gearPropertiesOpen=false;BuildGear();Sync();Surface.Focus();});
+            select.Padding=new Thickness(5,7,5,7);select.HorizontalContentAlignment=HorizontalAlignment.Left;
+            if(Surface.Selected==mark.Id)select.Background=new SolidColorBrush(Color.FromRgb(70,91,121));
+            select.ToolTip=mark.Tool==Tool.Image?"Unlock to move, resize or rotate":$"{mark.Colour} · {mark.StrokeStyle}";row.Children.Add(select);LayerRows.Children.Add(row);
+        }
+        if(Surface.Page.BackgroundImageId!=null)LayerRows.Children.Add(new TextBlock{Text="PDF background · locked",Margin=new Thickness(8)});
+    }
+    private void MoveLayer(int direction,bool edge=false){
+        if(Surface.Selected is not Guid id)return;int index=Surface.Page.Marks.FindIndex(m=>m.Id==id);if(index<0)return;
+        int target=edge?(direction>0?Surface.Page.Marks.Count-1:0):Math.Clamp(index+direction,0,Surface.Page.Marks.Count-1);
+        if(target==index)return;Surface.History.Record(Surface.Document);PageEditing.MoveLayer(Surface.Page,id,target);Changed();
+    }
+    private void LayerForwardClick(object sender,RoutedEventArgs e)=>MoveLayer(1);
+    private void LayerBackwardClick(object sender,RoutedEventArgs e)=>MoveLayer(-1);
+    private void LayerFrontClick(object sender,RoutedEventArgs e)=>MoveLayer(1,true);
+    private void LayerBackClick(object sender,RoutedEventArgs e)=>MoveLayer(-1,true);
+    private void LockImagesClick(object sender,RoutedEventArgs e){
+        if(!Surface.Page.Marks.Any(m=>m.Tool==Tool.Image && !m.Locked))return;
+        Surface.History.Record(Surface.Document);foreach(var mark in Surface.Page.Marks.Where(m=>m.Tool==Tool.Image))mark.Locked=true;Changed();
+    }
     private void OnClosing(object? sender,CancelEventArgs e){if(!ConfirmDiscard())e.Cancel=true;}
 }

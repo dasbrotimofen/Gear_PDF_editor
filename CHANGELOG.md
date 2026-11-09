@@ -48,3 +48,14 @@
 - Added image rotation left/right by 90 degrees and a custom-angle dialog.
 - Rotation participates in undo/redo, native saves, internal copying and PDF export.
 - Selection/hit testing and proportional resizing account for image rotation.
+
+## Starter update 8
+
+- Added per-object layer panel, lock/visibility and front/back ordering. New pasted images start locked; existing images can be locked together.
+- Added page selection, deletion (with last-page guard), reordering and undo/redo.
+- Added independent page reference preview and resizable reference window; adding a page references the previous working page.
+- Added solid/dotted/dashed/dot-dashed strokes across drawing tools, annotation properties, native persistence and PDF export.
+- Gear buttons accept direct stylus/touch presses and mouse press activation. Windows input behaviour remains unverified on hardware.
+- Disabled WPF flicks on sketch surfaces; added Ctrl+Shift+Z redo.
+- Native format v3 preserves layer flags and styles; v1/v2 files remain readable.
+- Pinned the PDF dependency's System.Security.Cryptography.Pkcs package to 10.0.13 in response to NuGet vulnerability warnings.

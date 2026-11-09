@@ -10,5 +10,6 @@ Pinned NuGet packages in the resolved application:
 - Microsoft.Extensions.Options/8.0.2
 - Microsoft.Extensions.Primitives/8.0.0
 - PDFsharp/6.2.3
+- System.Security.Cryptography.Pkcs/10.0.13 (explicit override of PDFsharp transitive dependency)
 
 Docnet.Core 2.6.0 supplies PDFium native binaries; Windows x64 is included in the launch folder. PDFium notices are copied verbatim from that exact package. PDFsharp 6.2.3 supplies PDF export. No Windows SDK projection DLLs or SDK tools are bundled. The .NET 10 Desktop Runtime is installed separately.

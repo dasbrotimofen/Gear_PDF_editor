@@ -10,4 +10,6 @@ PDFium and its bundled native dependencies: full notice file copied verbatim fro
 
 Microsoft.Extensions dependencies: exact versions in DEPENDENCIES.md; their licence files are copied verbatim from the resolved NuGet packages into licenses/.
 
+System.Security.Cryptography.Pkcs 10.0.13: Microsoft Corporation, MIT (package licence expression). MIT terms and package third-party notices are included in licenses/Microsoft-Pkcs-LICENSE.txt and licenses/Microsoft-Pkcs-THIRD-PARTY-NOTICES.txt.
+
 .NET app host: its SDK-provided licence and third-party notices are included in the launch folder. The Desktop Runtime itself is not bundled. Source builds restore the packages above. This inventory does not constitute legal or trademark clearance.

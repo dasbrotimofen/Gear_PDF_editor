@@ -25,9 +25,10 @@ public static class PdfExporter {
                     }
                 }
             }
-            foreach(var mark in source.Marks){
+            foreach(var mark in source.Marks.Where(m=>m.Visible)){
                 if(mark.Tool==Tool.Image){var bounds=Bounds(mark);var state=graphics.Save();double cx=bounds.X+bounds.Width/2,cy=bounds.Y+bounds.Height/2;graphics.TranslateTransform(cx,cy);graphics.RotateTransform(mark.RotationDegrees);DrawImage(graphics,document.Assets[mark.ImageAssetId!],new(-bounds.Width/2,-bounds.Height/2,bounds.Width,bounds.Height));graphics.Restore(state);continue;}
                 var colour=Colour(mark.Colour,mark.Opacity);var pen=new XPen(colour,mark.WidthMm*PointsPerMm){LineCap=XLineCap.Round,LineJoin=XLineJoin.Round};
+                if(mark.StrokeStyle!=StrokeStyle.Solid){pen.DashPattern=mark.StrokeStyle switch {StrokeStyle.Dotted=>new double[]{.01,3},StrokeStyle.Dashed=>new double[]{4,3},_=>new double[]{4,3,.01,3}};}
                 if(mark.Tool==Tool.Rectangle)graphics.DrawRectangle(pen,Bounds(mark));
                 else if(mark.Tool==Tool.Ellipse)graphics.DrawEllipse(pen,Bounds(mark));
                 else if(mark.Points.Count==1){var point=Point(mark.Points[0]);double radius=pen.Width/2;graphics.DrawEllipse(new XSolidBrush(colour),point.X-radius,point.Y-radius,radius*2,radius*2);}

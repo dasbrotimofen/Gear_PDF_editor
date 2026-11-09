@@ -3,7 +3,7 @@
 - Build solution; run Core.Checks; launch the application.
 - Draw dots and long strokes with mouse and pen, crossing page edges.
 - Exercise all shapes, object erase, selection movement, property edits and undo/redo.
-- Click/tap the collapsed gear to expand it; check all eight tool sectors lie inside its outline.
+- Click/tap the collapsed gear to expand it; check all nine tool sectors lie inside its outline.
 - Click/tap its hub again or press Escape to collapse; drag its hub with mouse and touch.
 - Drag near each viewport edge; resize the window and check the gear remains reachable.
 - Check canvas drawing/panning still works outside the gear bounds.
@@ -44,3 +44,13 @@ Do not treat successful compilation or model checks as validation of pen/touch b
 - Select a placed image; rotate left/right and enter a custom angle. Check undo/redo and save/reopen.
 - Move and resize images at 30, 90 and 270 degrees; the resize anchor and aspect ratio should remain stable.
 - Copy/paste a rotated image inside GEAR and export PDF; compare its angle and position.
+
+## Update 8 checks still requiring Windows
+
+- Paste an image: confirm it starts locked. Draw over it, erase repeatedly, and verify the image remains. Unlock to move/resize/rotate, then relock.
+- Lock existing images together. Locked selection must reject Delete, Cut, Properties and rotation. Undo/redo lock, visibility and stacking changes.
+- Hide/show layers; export and verify hidden layers are absent. Move images and strokes through front/back positions and compare export.
+- Select all nine gear tools with one mouse click, pen tap and finger tap, including after switching focus from another window. Reselect active tools to open Style and other property arcs.
+- Exercise solid/dotted/dashed/dot-dash with pens, highlighter, line, rectangle and ellipse. Inspect favourites, annotation property edits, reopen and export.
+- Add/delete/reorder pages including first/last, mixed sizes and imported PDF pages. Undo/redo; at least one page must remain.
+- Choose a reference page, draw on a different page, enlarge/resize/move the reference window. Reorder/delete/reference pages; undo/redo and reopen another document while it is visible.
