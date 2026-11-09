@@ -1,5 +1,12 @@
 # Changes
 
+## Obsidian viewer 0.1.0
+
+- Added a separate, minimal AGPL Obsidian plugin under `obsidian-plugin/`, with compiled manual-install files.
+- Registered `.gear` files for read-only tabs with all pages, responsive previews and external-save refresh.
+- Supports native v1–v3 geometry, images/backgrounds, rotations, styles and hidden layers without writing to source files.
+- Verified against GEAR PDF exports and in a disposable Obsidian 1.13.7 vault; see the plugin's validation notes.
+
 ## Starter update 1
 
 - Replaced system-menu styling with explicit dark surfaces, light labels and a contrasting hover state.

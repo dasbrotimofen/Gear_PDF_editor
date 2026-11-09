@@ -1,5 +1,7 @@
 # GEAR PDF Editor
 
+Read-only Obsidian previews are available in [obsidian-plugin/](obsidian-plugin/README.md). Copy its compiled plugin files into a vault to open `.gear` documents directly.
+
 Great everthing appears Wo(r)king PDF Editor
 
 A Windows-first sketching and document-markup prototype with a movable gear menu. Project source is AGPL-3.0-or-later. Keep the repository private during initial development.

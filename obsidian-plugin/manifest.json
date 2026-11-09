@@ -1,0 +1,9 @@
+{
+  "id": "gear-viewer",
+  "name": "GEAR Viewer",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Read-only previews of GEAR PDF Editor documents.",
+  "author": "GEAR PDF Editor contributors",
+  "isDesktopOnly": false
+}
